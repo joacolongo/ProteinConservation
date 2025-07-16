@@ -17,3 +17,8 @@ Create the PDB with identity values
 ```bash
 python conservationPDB.py  example/AF-P9WKK7-F1-model_v4_aligned.fasta example/AF-P9WKK7-F1-model_v4.pdb  example
 ```
+
+Visualization on ChimeraX
+```
+color bfactor palette alphafold
+```
