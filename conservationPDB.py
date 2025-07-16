@@ -11,30 +11,21 @@ from Bio.SeqRecord import SeqRecord
 from Bio.Seq import Seq
 
 
-# Still how to deal with multi chain PDBs is needed
-
 def extract_sequence_from_pdb(pdb_path):
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure("pdb", pdb_path)
     ppb = PPBuilder()
-    records = []
-    seen_chains = set()
 
-    for model in structure:
-        for chain in model:
-            chain_id = chain.id
-            if chain_id in seen_chains:
-                continue
-            seen_chains.add(chain_id)
-            peptides = ppb.build_peptides(chain)
-            if not peptides:
-                continue
-            sequence = ''.join([str(peptide.get_sequence()) for peptide in peptides])
-            record = SeqRecord(Seq(sequence), id=f"Chain_{chain_id}", description="")
-            records.append(record)
-    if not records:
-        raise ValueError("No peptide sequences found in PDB.")
-    return records[0]  # Use first chain as query
+    chains = list(structure[0])  # First model only
+
+    chain = chains[0]
+    peptides = ppb.build_peptides(chain)
+
+    sequence = ''.join([str(peptide.get_sequence()) for peptide in peptides])
+
+    pdb_id = os.path.splitext(os.path.basename(pdb_path))[0]
+    return SeqRecord(Seq(sequence), id=pdb_id, description="")
+
 
 def frequency(align):
     amino_acids = ['-']
@@ -51,11 +42,12 @@ def frequency(align):
     df.index = df.index + 1
     return df
 
+
 def main(msa_path, pdb_file, output_dir):
     if not os.path.exists(msa_path):
         print(f"MSA file not found: {msa_path}")
         sys.exit(1)
-    
+
     if not os.path.exists(pdb_file):
         print(f"PDB file not found: {pdb_file}")
         sys.exit(1)
@@ -91,29 +83,28 @@ def main(msa_path, pdb_file, output_dir):
     structure = parser.get_structure("my_protein", pdb_file)
 
     query_record = extract_sequence_from_pdb(pdb_file)
-    
+
     if len(query_record) != len(identity):
-        print(f"WARNING: Number of residues in PDB ({query_record}) "
+        print(f"WARNING: Number of residues in PDB ({len(query_record)}) "
               f"does not match number of entries in identity list ({len(identity)}).")
 
-    i = 0
-    for model in structure:
-        for chain in model:
-            residues = [res for res in chain if res.id[0] == ' ']
+    chain = list(structure[0])[0]  # First model, first chain
+    residues = [res for res in chain if res.id[0] == ' ']
 
-            if len(residues) == len(identity):
-                print(f"✅ Found matching chain {chain.id} with {len(residues)} residues")
-
-                for residue in residues:
-                    for atom in residue:
-                        atom.set_bfactor(round(identity[i], 2))
-                    i += 1
-            else:
-                print(f"⛔ Skipping chain {chain.id}: has {len(residues)} residues, expected {len(identity)}")
-            
+    if len(residues) != len(identity):
+        print(f"⛔ Chain has {len(residues)} residues, expected {len(identity)}")
+        sys.exit(1)
 
     pdb_name = os.path.splitext(os.path.basename(pdb_file))[0]
     output_pdb = os.path.join(output_dir, f"{pdb_name}_with_frequencies.pdb")
+
+    print(f"✅ Processing file {pdb_file} chain {chain.id} with {len(residues)} residues")
+
+    for i, residue in enumerate(residues):
+        for atom in residue:
+            atom.set_bfactor(round(identity[i], 2))
+
+
     io = PDB.PDBIO()
     io.set_structure(structure)
     io.save(output_pdb)
@@ -128,7 +119,7 @@ def main(msa_path, pdb_file, output_dir):
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Usage: python create_MSA.py <msa_fasta_file> <pdb_file> <output_directory>")
+        print("Usage: python conservationPDB.py <msa_fasta_file> <pdb_file> <output_directory>")
         sys.exit(1)
 
     msa_input = sys.argv[1]
